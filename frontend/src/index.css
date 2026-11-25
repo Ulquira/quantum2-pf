@@ -1,0 +1,134 @@
+/* Tema oficial PeruFibra (Rojo #D80319, Amarillo #F4BA00, Gris #7E7E7E) — Design System Moderno */
+@import "tailwindcss";
+
+@theme {
+  --color-pf-red: #D80319;
+  --color-pf-red-hover: #B50215;
+  --color-pf-yellow: #F4BA00;
+  --color-pf-gray: #7E7E7E;
+  --color-pf-ink: #0F1117;
+  --color-pf-surface: #F6F7F9;
+  --font-heading: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    background-color: var(--color-pf-surface);
+    color: #0F172A;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background-color: rgba(216, 3, 25, 0.14);
+    color: #0F1117;
+  }
+}
+
+/* Superficies y controles unificados */
+.pf-card {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 4px 16px -4px rgba(15, 23, 42, 0.04);
+}
+
+.pf-input {
+  background: #ffffff;
+  border: 1px solid #E2E8F0;
+  border-radius: 0.625rem;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.pf-input:hover {
+  border-color: #CBD5E1;
+}
+
+.pf-input:focus {
+  outline: none;
+  border-color: #D80319;
+  box-shadow: 0 0 0 3px rgba(216, 3, 25, 0.12);
+}
+
+.pf-btn-primary {
+  background: linear-gradient(180deg, #E20A20 0%, #D80319 100%);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(216, 3, 25, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: transform 120ms ease, box-shadow 150ms ease, filter 150ms ease;
+}
+
+.pf-btn-primary:hover:not(:disabled) {
+  filter: brightness(0.95);
+  box-shadow: 0 4px 12px -2px rgba(216, 3, 25, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.pf-btn-primary:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.pf-btn-secondary {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+
+.pf-btn-secondary:hover:not(:disabled) {
+  border-color: #CBD5E1;
+  background: #F8FAFC;
+  color: #0F172A;
+}
+
+/* Micro-animaciones */
+@keyframes pfFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pf-fade-in {
+  animation: pfFadeIn 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Scrollbar sutil en tablas y drawers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.28);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.45);
+}
+
+/* Deslizamiento tactil limpio sin barras grises en carruseles APK */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,13 @@
+{
+  "name": "perufibra-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c red,yellow \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:all": "concurrently -n SQL,API,WEB -c cyan,red,yellow \".\\cloud-sql-proxy.exe dynamic-radar-470920-g9:us-east4:quantum-vn --port 3306\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "test": "npm --prefix backend test && .\\backend\\node_modules\\.bin\\tsx --test frontend/src/features/tecnico-apk/utils/__tests__/fasesApk.test.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
+  }
+}

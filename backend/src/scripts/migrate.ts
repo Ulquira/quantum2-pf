@@ -264,6 +264,43 @@ const migrateEvidencias = async () => {
   await ensureIndex('dev_EVIDENCIAS', 'idx_ev_operacion', 'IDoperacion');
 };
 
+// Etiqueta: Tablas de control de jornadas (conexiones/desconexiones) y ultima ubicacion en vivo
+const migrateRastreoJornadas = async () => {
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS dev_JORNADAS_TECNICO (
+      id_jornada INT AUTO_INCREMENT PRIMARY KEY,
+      id_user VARCHAR(40) NOT NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVA',
+      inicio_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      inicio_lat DECIMAL(10, 7) NULL,
+      inicio_lng DECIMAL(10, 7) NULL,
+      fin_at DATETIME NULL,
+      fin_lat DECIMAL(10, 7) NULL,
+      fin_lng DECIMAL(10, 7) NULL,
+      motivo_cierre VARCHAR(40) NULL,
+      INDEX idx_jor_user_estado (id_user, estado),
+      INDEX idx_jor_inicio (inicio_at)
+    )
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS dev_TECNICO_UBICACION (
+      id_user VARCHAR(40) PRIMARY KEY,
+      id_jornada INT NULL,
+      en_jornada TINYINT(1) NOT NULL DEFAULT 0,
+      lat DECIMAL(10, 7) NULL,
+      lng DECIMAL(10, 7) NULL,
+      precision_m INT NULL,
+      velocidad_ms DECIMAL(6, 2) NULL,
+      bateria TINYINT UNSIGNED NULL,
+      id_operacion_activa VARCHAR(60) NULL,
+      estado_operativo VARCHAR(30) NULL,
+      ultima_actualizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_ubi_jornada (en_jornada, ultima_actualizacion)
+    )
+  `);
+};
+
 const runMigrations = async () => {
   console.log('[migrate] Iniciando migraciones de esquema e índices...');
   await migrateClientes();
@@ -271,6 +308,7 @@ const runMigrations = async () => {
   await migrateUsuarios();
   await migrateCatalogoEstados();
   await migrateEvidencias();
+  await migrateRastreoJornadas();
   console.log('[migrate] Migraciones completadas correctamente.');
 };
 

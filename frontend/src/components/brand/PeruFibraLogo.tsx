@@ -1,21 +1,26 @@
 // Etiqueta: Logotipo corporativo indivisible PeruFibra (Isotipo 5 fibras + Logotipo horizontal)
 import React from 'react';
 
+// Etiqueta: Props con soporte de escala compacta para cabeceras moviles
 interface Props {
   variant?: 'on-white' | 'on-red';
+  size?: 'sm' | 'md';
   className?: string;
 }
 
 export const PeruFibraLogo: React.FC<Props> = ({
   variant = 'on-white',
-  className = 'h-8',
+  size = 'md',
+  className,
 }) => {
   const colorPrimario = variant === 'on-red' ? '#FFFFFF' : '#D80319';
   const colorAcento = '#F4BA00';
+  const alturaDefault = size === 'sm' ? 'h-5' : 'h-8';
+  const espacio = size === 'sm' ? 'gap-1.5' : 'gap-2.5';
 
   return (
     <div
-      className={`inline-flex items-center gap-2.5 select-none shrink-0 ${className}`}
+      className={`inline-flex items-center ${espacio} select-none shrink-0 ${className || alturaDefault}`}
       aria-label="PerúFibra"
     >
       {/* Isotipo oficial: conector optico de 5 fibras */}
@@ -68,7 +73,9 @@ export const PeruFibraLogo: React.FC<Props> = ({
 
       {/* Construccion tipografica Helvetica Bold indivisible */}
       <span
-        className="font-bold tracking-tight leading-none text-[1.35rem]"
+        className={`font-bold tracking-tight leading-none ${
+          size === 'sm' ? 'text-[1.05rem]' : 'text-[1.35rem]'
+        }`}
         style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
       >
         <span style={{ color: colorPrimario }}>Perú</span>

@@ -1,0 +1,9 @@
+{
+	"appId": "com.perufibra.tecnico",
+	"appName": "PeruFibra Tecnico",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "http",
+		"cleartext": true
+	}
+}

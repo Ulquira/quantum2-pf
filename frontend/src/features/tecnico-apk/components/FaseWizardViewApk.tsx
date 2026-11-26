@@ -50,13 +50,12 @@ interface Props {
   onChangeSnMesh: (val: string) => void;
 }
 
+// Etiqueta: Desestructuracion limpia sin variables sin uso para pasar tsc -b
 export const FaseWizardViewApk: React.FC<Props> = ({
   fases,
   indiceFase,
   evidencias,
   bloqueado,
-  pendientesOffline = 0,
-  onReintentarSync,
   atTitular,
   candidatas,
   ctoUso,

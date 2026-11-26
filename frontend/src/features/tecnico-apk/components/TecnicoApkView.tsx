@@ -1,13 +1,12 @@
-// Etiqueta: Bandeja movil moderna del Tecnico con TanStack Query y filtros por Codigo y Fecha
-import React, { useState } from 'react';
+// Etiqueta: Bandeja movil del Tecnico con monitoreo continuo de jornada, cabecera compacta y menu retraible
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  LogOut,
+  Menu,
   RefreshCw,
   ChevronRight,
   Lock,
   Search,
-  Calendar,
   MapPin,
   Clock,
   X,
@@ -18,7 +17,11 @@ import type { OrdenOperacion } from '../../operaciones/types/operacion.types';
 import type { CatalogoEstado } from '../../configuracion/types/configuracion.types';
 import { esOrdenCerrada } from '../../operaciones/utils/operacionJson';
 import { OrdenEjecucionApk } from './OrdenEjecucionApk';
+import { TecnicoMenuDrawer, type SeccionMenuApk } from './TecnicoMenuDrawer';
+import { BarraJornadaApk } from './BarraJornadaApk';
+import { useMonitoreoJornada } from '../hooks/useMonitoreoJornada';
 import { apiClient } from '../../../lib/apiClient';
+import { flushOfflineQueue, getPendingItems } from '../services/offlineQueue';
 
 interface Props {
   usuario: SesionUsuario;
@@ -34,14 +37,23 @@ const badgeEstadoMovil = (estado: string) => {
 };
 
 export const TecnicoApkView: React.FC<Props> = ({ usuario, onLogout }) => {
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  const [seccionMenu, setSeccionMenu] = useState<SeccionMenuApk>('ORDENES');
   const [tab, setTab] = useState<'PENDIENTES' | 'CERRADAS'>('PENDIENTES');
   const [busqueda, setBusqueda] = useState('');
   const [filtroFecha, setFiltroFecha] = useState('');
   const [ordenActivaId, setOrdenActivaId] = useState<string | null>(null);
 
+  const [enLinea, setEnLinea] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [pendientesOffline, setPendientesOffline] = useState(0);
+  const [sincronizandoManual, setSincronizandoManual] = useState(false);
+
   const {
     data: ordenes = [],
     isFetching: loadingOrdenes,
+    isError: errorConexion,
     refetch: cargarMisOrdenes,
   } = useQuery({
     queryKey: ['apk-ordenes', usuario.id_user, usuario.cuadrilla, usuario.contrata],
@@ -68,9 +80,70 @@ export const TecnicoApkView: React.FC<Props> = ({ usuario, onLogout }) => {
     staleTime: 5 * 60_000,
   });
 
-  const loading = loadingOrdenes;
+  // Etiqueta: Identifica si el tecnico tiene una orden activa en ruta o ejecucion para reportarla en el ping
+  const ordenEnCurso = useMemo(
+    () =>
+      ordenes.find((o) => ['EN PROCESO', 'EN CAMINO'].includes((o.Estado || '').toUpperCase())) ||
+      null,
+    [ordenes]
+  );
 
+  const {
+    enJornada,
+    jornada,
+    cambiandoJornada,
+    estadoGps,
+    iniciarJornada,
+    finalizarJornada,
+  } = useMonitoreoJornada({
+    idUser: usuario.id_user,
+    idOperacionActiva: ordenEnCurso?.IDoperacion || null,
+    estadoOperativo: ordenEnCurso?.Estado?.toUpperCase() || 'DISPONIBLE',
+  });
+
+  const revisarPendientes = async () => {
+    const items = await getPendingItems().catch(() => []);
+    setPendientesOffline(items.length);
+  };
+
+  const sincronizarTodo = async () => {
+    setSincronizandoManual(true);
+    try {
+      await flushOfflineQueue().catch(() => {});
+      await Promise.all([cargarMisOrdenes(), revisarPendientes()]);
+    } finally {
+      setSincronizandoManual(false);
+    }
+  };
+
+  // Etiqueta: Cierra la jornada activa en servidor antes de salir de la sesion
+  const manejarLogout = async () => {
+    await finalizarJornada('LOGOUT');
+    onLogout();
+  };
+
+  useEffect(() => {
+    revisarPendientes();
+    const alConectar = () => {
+      setEnLinea(true);
+      sincronizarTodo();
+    };
+    const alDesconectar = () => setEnLinea(false);
+
+    window.addEventListener('online', alConectar);
+    window.addEventListener('offline', alDesconectar);
+    return () => {
+      window.removeEventListener('online', alConectar);
+      window.removeEventListener('offline', alDesconectar);
+    };
+  }, []);
+
+  const conectadoReal = enLinea && !errorConexion;
+  const sincronizando = loadingOrdenes || sincronizandoManual;
   const ordenSeleccionada = ordenes.find((o) => o.IDoperacion === ordenActivaId) || null;
+
+  const conteoAsignadas = ordenes.filter((o) => !esOrdenCerrada(o, catalogoApk)).length;
+  const conteoCerradas = ordenes.length - conteoAsignadas;
 
   const ordenesFiltradas = ordenes.filter((o) => {
     const cerrada = esOrdenCerrada(o, catalogoApk);
@@ -90,28 +163,90 @@ export const TecnicoApkView: React.FC<Props> = ({ usuario, onLogout }) => {
     return cumpleCodigo && cumpleFecha;
   });
 
+  const colorPuntoEstado = !conectadoReal
+    ? 'bg-neutral-300'
+    : pendientesOffline > 0
+    ? 'bg-pf-yellow'
+    : enJornada
+    ? 'bg-emerald-400'
+    : 'bg-white/45';
+
+  const tituloEstadoRed = !conectadoReal
+    ? 'Sin conexión'
+    : pendientesOffline > 0
+    ? `${pendientesOffline} cambio(s) pendiente(s)`
+    : enJornada
+    ? 'En jornada · GPS activo'
+    : 'Fuera de servicio';
+
   return (
-    <div className="min-h-screen w-full bg-[#F8F9FA] max-w-lg mx-auto border-x border-neutral-200 flex flex-col">
+    <div className="min-h-screen w-full bg-[#F8F9FA] max-w-lg mx-auto sm:border-x sm:border-neutral-200 flex flex-col overflow-x-hidden">
       {!ordenSeleccionada && (
-        <header className="w-full h-14 bg-pf-red text-white px-4 flex items-center justify-between gap-3 sticky top-0 z-30 shadow-sm shrink-0">
-          <PeruFibraLogo variant="on-red" className="h-6" />
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="text-right min-w-0">
-              <div className="text-xs font-bold leading-tight truncate">{usuario.nombres}</div>
-              <div className="text-[10px] text-white/85 font-medium truncate">
-                {usuario.cuadrilla || usuario.contrata}
-              </div>
-            </div>
+        <header className="w-full h-12 bg-pf-red text-white px-3 flex items-center justify-between sticky top-0 z-30 shadow-xs shrink-0">
+          {/* Etiqueta: Izquierda simetrica (Menu + Marca compacta + Indicador con onda periodica) */}
+          <div className="flex items-center gap-1.5 min-w-0">
             <button
-              onClick={onLogout}
-              title="Cerrar sesión"
-              className="p-2 rounded-lg bg-white/15 hover:bg-white/25 shrink-0 cursor-pointer"
+              type="button"
+              onClick={() => setMenuAbierto(true)}
+              aria-label="Abrir menú"
+              className="w-8 h-8 -ml-1 rounded-lg hover:bg-white/15 active:bg-white/20 flex items-center justify-center transition cursor-pointer shrink-0"
             >
-              <LogOut className="w-4 h-4" />
+              <Menu className="w-[18px] h-[18px]" />
+            </button>
+
+            <PeruFibraLogo variant="on-red" size="sm" />
+
+            <button
+              type="button"
+              onClick={sincronizarTodo}
+              title={tituloEstadoRed}
+              aria-label={tituloEstadoRed}
+              className="ml-1.5 h-6 px-1.5 rounded-full hover:bg-white/10 flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <span className="relative flex w-2 h-2">
+                {conectadoReal && enJornada && (
+                  <span
+                    className={`pf-signal-wave absolute inset-0 rounded-full ${colorPuntoEstado}`}
+                  />
+                )}
+                <span className={`relative w-2 h-2 rounded-full ${colorPuntoEstado}`} />
+              </span>
+              {pendientesOffline > 0 && (
+                <span className="text-[10px] font-bold text-pf-yellow leading-none tabular-nums">
+                  {pendientesOffline}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Etiqueta: Derecha minimalista (Solo sincronizacion) */}
+          <div className="flex items-center shrink-0 -mr-1">
+            <button
+              type="button"
+              onClick={sincronizarTodo}
+              disabled={sincronizando}
+              title="Sincronizar"
+              aria-label="Sincronizar"
+              className="w-8 h-8 rounded-lg hover:bg-white/15 active:bg-white/20 flex items-center justify-center transition cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-4 h-4 ${sincronizando ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </header>
       )}
+
+      <TecnicoMenuDrawer
+        abierto={menuAbierto}
+        usuario={usuario}
+        seccionActiva={seccionMenu}
+        enLinea={conectadoReal && enJornada}
+        pendientesOffline={pendientesOffline}
+        sincronizando={sincronizando}
+        onClose={() => setMenuAbierto(false)}
+        onSelectSeccion={setSeccionMenu}
+        onSincronizar={sincronizarTodo}
+        onLogout={manejarLogout}
+      />
 
       <main className="flex-1 p-3">
         {ordenSeleccionada ? (
@@ -119,79 +254,91 @@ export const TecnicoApkView: React.FC<Props> = ({ usuario, onLogout }) => {
             orden={ordenSeleccionada}
             idTecnico={usuario.id_user}
             catalogoApk={catalogoApk}
-            onVolver={() => setOrdenActivaId(null)}
+            onVolver={() => {
+              setOrdenActivaId(null);
+              revisarPendientes();
+            }}
             onOrdenActualizada={() => {
               cargarMisOrdenes();
+              revisarPendientes();
             }}
           />
         ) : (
           <div className="space-y-3">
-            {/* Pestañas En Curso / Cerradas + Refrescar */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex flex-1 bg-neutral-200/75 p-1 rounded-xl text-xs font-bold">
-                <button
-                  onClick={() => setTab('PENDIENTES')}
-                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer ${
-                    tab === 'PENDIENTES' ? 'bg-white text-pf-red shadow-xs' : 'text-neutral-600'
-                  }`}
-                >
-                  Asignadas
-                </button>
-                <button
-                  onClick={() => setTab('CERRADAS')}
-                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer ${
-                    tab === 'CERRADAS' ? 'bg-white text-pf-red shadow-xs' : 'text-neutral-600'
-                  }`}
-                >
-                  Cerradas
-                </button>
-              </div>
+            {/* Etiqueta: Control de Jornada (Conexion/Desconexion + GPS continuo) */}
+            <BarraJornadaApk
+              enJornada={enJornada}
+              jornada={jornada}
+              cambiando={cambiandoJornada}
+              estadoGps={estadoGps}
+              onToggle={() => (enJornada ? finalizarJornada('MANUAL') : iniciarJornada())}
+            />
 
+            {/* Pestañas Asignadas / Cerradas */}
+            <div className="grid grid-cols-2 bg-neutral-200/75 p-1 rounded-xl text-xs font-bold">
               <button
-                onClick={() => cargarMisOrdenes()}
-                className="p-2.5 rounded-xl bg-white border border-neutral-200 text-neutral-700 cursor-pointer"
+                type="button"
+                onClick={() => setTab('PENDIENTES')}
+                className={`py-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  tab === 'PENDIENTES' ? 'bg-white text-pf-red shadow-xs' : 'text-neutral-600'
+                }`}
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>Asignadas</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
+                  {conteoAsignadas}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('CERRADAS')}
+                className={`py-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  tab === 'CERRADAS' ? 'bg-white text-pf-red shadow-xs' : 'text-neutral-600'
+                }`}
+              >
+                <span>Cerradas</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-700">
+                  {conteoCerradas}
+                </span>
               </button>
             </div>
 
-            {/* Filtros compactos: Codigo de Pedido y Fecha */}
-            <div className="bg-white p-2.5 rounded-2xl border border-neutral-200 flex items-center gap-2 shadow-xs">
-              <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 text-pf-gray absolute left-2.5 top-2.5" />
+            {/* Filtros compactos */}
+            <div className="bg-white p-2 rounded-2xl border border-neutral-200 flex items-center gap-2 shadow-xs">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-3.5 h-3.5 text-pf-gray absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Código, DNI o cliente..."
+                  placeholder="Pedido, DNI o cliente"
                   className="w-full pl-8 pr-2 py-1.5 text-xs border border-neutral-200 rounded-xl focus:outline-none focus:border-pf-red"
                 />
               </div>
 
-              <div className="relative flex items-center border border-neutral-200 rounded-xl px-2 py-1.5 bg-neutral-50">
-                <Calendar className="w-3.5 h-3.5 text-pf-red mr-1.5 shrink-0" />
-                <input
-                  type="date"
-                  value={filtroFecha}
-                  onChange={(e) => setFiltroFecha(e.target.value)}
-                  className="text-xs bg-transparent text-neutral-800 font-semibold focus:outline-none w-[108px]"
-                />
-              </div>
+              <input
+                type="date"
+                value={filtroFecha}
+                onChange={(e) => setFiltroFecha(e.target.value)}
+                aria-label="Filtrar por fecha"
+                className="w-[116px] shrink-0 text-[11px] font-semibold text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-xl px-2 py-1.5 focus:outline-none focus:border-pf-red"
+              />
 
               {(busqueda || filtroFecha) && (
                 <button
+                  type="button"
                   onClick={() => {
                     setBusqueda('');
                     setFiltroFecha('');
                   }}
-                  className="p-1.5 text-pf-red hover:bg-pf-red/10 rounded-lg cursor-pointer"
+                  aria-label="Limpiar filtros"
+                  className="p-1.5 text-pf-red hover:bg-pf-red/10 rounded-lg shrink-0 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
             </div>
 
-            {/* Listado moderno de Tarjetas de Ordenes */}
+            {/* Listado de Tarjetas de Ordenes */}
             <div className="space-y-2.5">
               {ordenesFiltradas.map((o) => {
                 const cerrada = esOrdenCerrada(o, catalogoApk);

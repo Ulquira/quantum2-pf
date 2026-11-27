@@ -24,6 +24,7 @@ interface ClientesPaginadosResponse {
   filtros?: {
     distritos: string[];
     estadosValidacion: string[];
+    estadosOperacion?: string[];
   };
 }
 
@@ -95,6 +96,7 @@ export const ClientesView: React.FC<Props> = ({ onOrdenProgramada }) => {
   const totalPages = respuesta?.pagination?.totalPages || 1;
   const distritosUnicos = respuesta?.filtros?.distritos || [];
   const estadosValidacionUnicos = respuesta?.filtros?.estadosValidacion || [];
+  const estadosOperacionUnicos = respuesta?.filtros?.estadosOperacion || [];
 
   const importarArchivoExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,16 +128,11 @@ export const ClientesView: React.FC<Props> = ({ onOrdenProgramada }) => {
   return (
     <div className="p-6 lg:p-8 space-y-5 pf-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Clientes</h1>
-            <span className="font-mono tabular-nums bg-slate-900/5 border border-slate-200/80 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
-              {total}
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Cartera de pedidos validados y programación de visitas FTTH
-          </p>
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Clientes</h1>
+          <span className="font-mono tabular-nums bg-slate-900/5 border border-slate-200/80 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+            {total}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -184,6 +181,7 @@ export const ClientesView: React.FC<Props> = ({ onOrdenProgramada }) => {
         estadosValidacion={estadosValidacionUnicos}
         filtroEstado={filtroEstado}
         onEstadoChange={setFiltroEstado}
+        estadosOperacion={estadosOperacionUnicos}
         fechaDesde={fechaDesde}
         onFechaDesdeChange={setFechaDesde}
         fechaHasta={fechaHasta}

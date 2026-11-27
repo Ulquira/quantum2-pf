@@ -1,4 +1,4 @@
-// Etiqueta: Barra minimalista de filtros con rango de fechas (Desde - Hasta) y estado de validacion
+// Etiqueta: Barra minimalista de filtros con selector del ultimo estado operativo real
 import React from 'react';
 import { Search, X } from 'lucide-react';
 
@@ -13,6 +13,7 @@ interface Props {
   estadosValidacion: string[];
   filtroEstado: string;
   onEstadoChange: (val: string) => void;
+  estadosOperacion: string[];
   fechaDesde: string;
   onFechaDesdeChange: (val: string) => void;
   fechaHasta: string;
@@ -31,6 +32,7 @@ export const ClientesFiltrosBar: React.FC<Props> = ({
   estadosValidacion,
   filtroEstado,
   onEstadoChange,
+  estadosOperacion,
   fechaDesde,
   onFechaDesdeChange,
   fechaHasta,
@@ -47,19 +49,32 @@ export const ClientesFiltrosBar: React.FC<Props> = ({
 
   return (
     <div className="pf-card p-3 flex flex-wrap items-center gap-2.5">
-      {/* Buscador rapido */}
       <div className="relative flex-1 min-w-[230px]">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
         <input
           type="text"
-          placeholder="Buscar DNI, pedido, cliente o comentario..."
+          placeholder="Buscar DNI, pedido, cliente, cuadrilla o comentario..."
           value={busqueda}
           onChange={(e) => onBusquedaChange(e.target.value)}
           className="pf-input w-full pl-9 pr-3 py-2 text-xs text-slate-900 placeholder:text-slate-400"
         />
       </div>
 
-      {/* Selector de Distrito */}
+      <select
+        value={filtroEstado}
+        onChange={(e) => onEstadoChange(e.target.value)}
+        className="pf-input px-3 py-2 text-xs font-semibold text-slate-800"
+      >
+        <option value="TODOS">Último Estado: Todos</option>
+        <option value="SIN_PROGRAMAR">SIN PROGRAMAR</option>
+        <option value="EN_GESTION">EN GESTIÓN ACTIVA</option>
+        {estadosOperacion.map((est) => (
+          <option key={est} value={est}>
+            {est}
+          </option>
+        ))}
+      </select>
+
       <select
         value={filtroDistrito}
         onChange={(e) => onDistritoChange(e.target.value)}
@@ -73,7 +88,6 @@ export const ClientesFiltrosBar: React.FC<Props> = ({
         ))}
       </select>
 
-      {/* Selector de Estado de Validacion */}
       <select
         value={filtroValidacion}
         onChange={(e) => onValidacionChange(e.target.value)}
@@ -87,18 +101,6 @@ export const ClientesFiltrosBar: React.FC<Props> = ({
         ))}
       </select>
 
-      {/* Selector de Programacion */}
-      <select
-        value={filtroEstado}
-        onChange={(e) => onEstadoChange(e.target.value)}
-        className="pf-input px-3 py-2 text-xs font-medium text-slate-700"
-      >
-        <option value="TODOS">Despacho: Todos</option>
-        <option value="SIN_PROGRAMAR">Pendientes</option>
-        <option value="PROGRAMADO">Programados</option>
-      </select>
-
-      {/* Rango de fechas Desde - Hasta */}
       <div className="flex items-center gap-1.5 border border-slate-200 rounded-[10px] px-2.5 py-1.5 bg-slate-50/70">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Desde</span>
         <input
@@ -119,6 +121,7 @@ export const ClientesFiltrosBar: React.FC<Props> = ({
 
       {hayFiltros && (
         <button
+          type="button"
           onClick={onLimpiar}
           className="flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-pf-red hover:bg-pf-red/8 rounded-lg transition cursor-pointer"
         >

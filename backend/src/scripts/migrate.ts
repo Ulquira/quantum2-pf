@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { dbPool } from '../config/db';
 import { SEMILLA_CATALOGO_PERUFIBRA } from '../config/semillaEstados';
+import { ensureTablaOperacionLogs } from '../services/operacionLogService';
 
 interface ColumnInfo {
   Field: string;
@@ -309,6 +310,7 @@ const runMigrations = async () => {
   await migrateCatalogoEstados();
   await migrateEvidencias();
   await migrateRastreoJornadas();
+  await ensureTablaOperacionLogs();
   console.log('[migrate] Migraciones completadas correctamente.');
 };
 

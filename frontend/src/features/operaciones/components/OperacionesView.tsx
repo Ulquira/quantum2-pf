@@ -6,6 +6,7 @@ import type { OrdenOperacion } from '../types/operacion.types';
 import { OperacionesFiltrosBar } from './OperacionesFiltrosBar';
 import { OperacionesTable } from './OperacionesTable';
 import { OperacionDetalleDrawer } from './OperacionDetalleDrawer';
+import { OperacionesKpiBar, type ResumenOperacionesKpi } from './OperacionesKpiBar';
 import { exportarOperacionesCsv } from '../services/exportarOperaciones';
 import { apiClient } from '../../../lib/apiClient';
 
@@ -19,6 +20,7 @@ interface OperacionesPaginadasResponse {
     total: number;
     totalPages: number;
   };
+  resumen?: ResumenOperacionesKpi;
   filtros?: {
     distritos: string[];
     cuadrillas: string[];
@@ -109,20 +111,22 @@ export const OperacionesView: React.FC = () => {
   const totalPages = respuesta?.pagination?.totalPages || 1;
   const distritosUnicos = respuesta?.filtros?.distritos || [];
   const cuadrillasUnicas = respuesta?.filtros?.cuadrillas || [];
+  const resumenKpi: ResumenOperacionesKpi = respuesta?.resumen || {
+    total,
+    pendientes: 0,
+    en_gestion: 0,
+    finalizadas: 0,
+    incidencias: 0,
+  };
 
   return (
     <div className="p-6 lg:p-8 space-y-5 pf-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Operaciones</h1>
-            <span className="font-mono tabular-nums bg-slate-900/5 border border-slate-200/80 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
-              {total}
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Despacho de cuadrillas, seguimiento en campo y cierre de visitas
-          </p>
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Operaciones</h1>
+          <span className="font-mono tabular-nums bg-slate-900/5 border border-slate-200/80 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+            {total}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -144,6 +148,12 @@ export const OperacionesView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <OperacionesKpiBar
+        resumen={resumenKpi}
+        filtroEstado={filtroEstado}
+        onSelectEstado={setFiltroEstado}
+      />
 
       <OperacionesFiltrosBar
         busqueda={busqueda}

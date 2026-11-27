@@ -200,9 +200,10 @@ export const FaseWizardViewApk: React.FC<Props> = ({
 
         {faseActual.id === 'CTO' && (
           <div className="space-y-2.5">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">CTO *</label>
+            {/* Etiqueta: Linea 1 - Selector CTO con campo manual condicionado en la misma linea */}
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-600 mb-1">CTO *</label>
+              <div className={esCtoPersonalizada ? 'grid grid-cols-[120px_1fr] gap-2' : ''}>
                 <select
                   disabled={bloqueado}
                   value={esCtoPersonalizada ? '__OTRA__' : ctoUso}
@@ -215,9 +216,9 @@ export const FaseWizardViewApk: React.FC<Props> = ({
                       onChangeCtoUso(e.target.value);
                     }
                   }}
-                  className="w-full border border-neutral-300 rounded-xl px-2 py-2 text-xs font-bold bg-white focus:outline-none focus:border-pf-red"
+                  className="w-full border border-neutral-300 rounded-xl px-2.5 py-2 text-xs font-bold bg-white focus:outline-none focus:border-pf-red"
                 >
-                  <option value="">Elegir...</option>
+                  <option value="">Elegir CTO...</option>
                   {candidatas.map((c, i) => (
                     <option key={i} value={c.cto || ''}>
                       {c.cto}
@@ -225,22 +226,47 @@ export const FaseWizardViewApk: React.FC<Props> = ({
                   ))}
                   <option value="__OTRA__">Otra CTO...</option>
                 </select>
+
+                {esCtoPersonalizada && (
+                  <input
+                    type="text"
+                    disabled={bloqueado}
+                    placeholder="Ej: WN-12A-2456043"
+                    value={ctoUso}
+                    onChange={(e) => onChangeCtoUso(e.target.value.toUpperCase())}
+                    className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-xs font-bold uppercase focus:outline-none focus:border-pf-red"
+                  />
+                )}
               </div>
+            </div>
+
+            {/* Etiqueta: Linea 2 - Puerto (1-16), Potencia RX CTO y Metraje en una sola fila */}
+            <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">Puerto *</label>
-                <input
-                  type="text"
+                <label className="block text-[11px] font-bold text-neutral-600 mb-1 truncate">
+                  Puerto *
+                </label>
+                <select
                   disabled={bloqueado}
-                  placeholder="Ej: 4"
                   value={puerto}
                   onChange={(e) => onChangePuerto(e.target.value)}
-                  className="w-full border border-neutral-300 rounded-xl px-2.5 py-2 text-xs font-bold focus:outline-none focus:border-pf-red"
-                />
+                  className="w-full border border-neutral-300 rounded-xl px-2 py-2 text-xs font-bold bg-white focus:outline-none focus:border-pf-red"
+                >
+                  <option value="">--</option>
+                  {Array.from({ length: 16 }, (_, idx) => String(idx + 1)).map((num) => (
+                    <option key={num} value={num}>
+                      {num}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">RX CTO *</label>
+                <label className="block text-[11px] font-bold text-neutral-600 mb-1 truncate">
+                  RX CTO *
+                </label>
                 <input
                   type="text"
+                  inputMode="decimal"
                   disabled={bloqueado}
                   placeholder="-18.4"
                   value={rxCto}
@@ -249,35 +275,21 @@ export const FaseWizardViewApk: React.FC<Props> = ({
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">
-                  Metraje Cable (m) *
+                <label className="block text-[11px] font-bold text-neutral-600 mb-1 truncate">
+                  Metraje (m) *
                 </label>
                 <input
                   type="number"
+                  min={1}
+                  inputMode="numeric"
                   disabled={bloqueado}
-                  placeholder="Ej: 65"
+                  placeholder="65"
                   value={metraje}
                   onChange={(e) => onChangeMetraje(e.target.value)}
                   className="w-full border border-neutral-300 rounded-xl px-2.5 py-2 text-xs font-bold focus:outline-none focus:border-pf-red"
                 />
               </div>
             </div>
-
-            {esCtoPersonalizada && (
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">
-                  Código de CTO manual *
-                </label>
-                <input
-                  type="text"
-                  disabled={bloqueado}
-                  placeholder="Ej: WN-12A-2456043"
-                  value={ctoUso}
-                  onChange={(e) => onChangeCtoUso(e.target.value.toUpperCase())}
-                  className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-xs font-bold uppercase focus:outline-none focus:border-pf-red"
-                />
-              </div>
-            )}
           </div>
         )}
 
@@ -288,8 +300,9 @@ export const FaseWizardViewApk: React.FC<Props> = ({
             </label>
             <input
               type="text"
+              inputMode="decimal"
               disabled={bloqueado}
-              placeholder="Ej: -19.1"
+              placeholder="-19.1"
               value={rxRoseta}
               onChange={(e) => onChangeRxRoseta(e.target.value)}
               className="w-full border border-neutral-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-pf-red"

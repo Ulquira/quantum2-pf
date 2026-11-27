@@ -9,6 +9,7 @@ import { authRouter } from './modules/auth/auth.routes';
 import { apkRouter } from './modules/apk/apk.routes';
 import { rastreoRouter } from './modules/rastreo/rastreo.routes';
 import { locationStore } from './services/locationStore';
+import { ensureTablaOperacionLogs } from './services/operacionLogService';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -42,6 +43,7 @@ app.use('/api/rastreo', rastreoRouter);
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Backend PeruFibra modular activo en http://localhost:${PORT}`);
+  ensureTablaOperacionLogs().catch((err) => console.error('[OperacionLogs] Init error:', err));
   locationStore.init().catch((err) => console.error('[LocationStore] Init error:', err));
 });
 

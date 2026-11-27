@@ -1,10 +1,22 @@
-// Etiqueta: Panel lateral de Operaciones con bloqueo total de edicion para ordenes cerradas
+// Etiqueta: Drawer moderno de Operaciones con cabecera limpia, pestañas y modo lectura elegante
 import React, { useEffect, useState } from 'react';
-import { X, Save, Lock } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Camera,
+  ClipboardCheck,
+  Cpu,
+  History,
+  Lock,
+  Save,
+  Users,
+  X,
+} from 'lucide-react';
 import type { OrdenOperacion } from '../types/operacion.types';
 import type { CatalogoEstado } from '../../configuracion/types/configuracion.types';
 import { MesaEstadoSection } from './MesaEstadoSection';
 import { OperacionFichaLectura } from './OperacionFichaLectura';
+import { OperacionEvidenciasGallery } from './OperacionEvidenciasGallery';
+import { OperacionHistorialTimeline } from './OperacionHistorialTimeline';
 import { esOrdenCerrada } from '../utils/operacionJson';
 import { apiClient } from '../../../lib/apiClient';
 
@@ -21,11 +33,24 @@ interface Props {
   onActualizado: () => void;
 }
 
+type TabDrawer = 'GESTION' | 'TECNICO' | 'EVIDENCIAS' | 'HISTORIAL';
+
+const claseBadgeEstado = (estado: string) => {
+  const est = (estado || '').toUpperCase();
+  if (est === 'FINALIZADO') return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+  if (est === 'CANCELADO' || est === 'SIN FACILIDADES TÉCNICAS' || est === 'INASISTENCIA') {
+    return 'bg-pf-red/10 text-pf-red ring-1 ring-pf-red/20';
+  }
+  if (est === 'PENDIENTE') return 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
+  return 'bg-pf-yellow/20 text-slate-900 ring-1 ring-pf-yellow/40';
+};
+
 export const OperacionDetalleDrawer: React.FC<Props> = ({
   orden,
   onClose,
   onActualizado,
 }) => {
+  const [tabActiva, setTabActiva] = useState<TabDrawer>('GESTION');
   const [partners, setPartners] = useState<string[]>([]);
   const [cuadrillasCatalogo, setCuadrillasCatalogo] = useState<CuadrillaCatalogo[]>([]);
   const [catalogoEstados, setCatalogoEstados] = useState<CatalogoEstado[]>([]);
@@ -38,6 +63,18 @@ export const OperacionDetalleDrawer: React.FC<Props> = ({
   const [proximaFecha, setProximaFecha] = useState('');
   const [proximoTramo, setProximoTramo] = useState('08:00 - 12:00');
   const [guardando, setGuardando] = useState(false);
+
+  const { data: evidencias = [] } = useQuery({
+    queryKey: ['operacion-evidencias', orden?.IDoperacion || ''],
+    queryFn: async () => {
+      if (!orden?.IDoperacion) return [];
+      const { data } = await apiClient.get<unknown[]>(
+        `/apk/ordenes/${encodeURIComponent(orden.IDoperacion)}/evidencias`
+      );
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: Boolean(orden?.IDoperacion),
+  });
 
   useEffect(() => {
     if (!orden) return;
@@ -52,6 +89,7 @@ export const OperacionDetalleDrawer: React.FC<Props> = ({
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
 
+    setTabActiva('GESTION');
     setEstadoMesa(estInicial);
     setSubEstadoMesa(subInicial);
     setMotivoMesa(orden.Motivo || '');
@@ -154,123 +192,249 @@ export const OperacionDetalleDrawer: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/35 backdrop-blur-[1px]" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex justify-end bg-slate-950/40 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
       <form
         onSubmit={guardarGestion}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl bg-white h-full shadow-2xl border-l border-neutral-200 flex flex-col overflow-hidden"
+        className="w-full max-w-2xl bg-[#F8F9FA] h-full shadow-2xl border-l border-slate-200/80 flex flex-col overflow-hidden sm:rounded-l-2xl pf-fade-in"
       >
-        <div className="px-6 py-4 bg-pf-red text-white flex items-center justify-between shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold">Pedido #{orden.valida_cod_pedido}</span>
-              <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
-                Visita {orden.Conteo_Operaciones}
-              </span>
-              {bloqueado && (
-                <span className="inline-flex items-center gap-1 text-xs bg-black/25 px-2 py-0.5 rounded font-bold">
-                  <Lock className="w-3 h-3" /> Cerrado
+        {/* Etiqueta: Cabecera SaaS blanca con acento rojo PeruFibra */}
+        <div className="bg-white border-b border-slate-200/80 shrink-0">
+          <div className="h-1 w-full bg-pf-red" />
+
+          <div className="px-6 pt-4 pb-3 flex items-start justify-between gap-4">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-lg font-bold text-slate-900 font-mono tabular-nums tracking-tight">
+                  #{orden.valida_cod_pedido}
                 </span>
-              )}
-            </div>
-            <div className="text-xs text-white/85 mt-0.5">{orden.IDoperacion}</div>
-          </div>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/15 cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm">
-          <section
-            className={`bg-white rounded-xl p-4 space-y-3 ${
-              bloqueado ? 'border border-neutral-200' : 'border-2 border-pf-red/20'
-            }`}
-          >
-            <h3
-              className={`text-xs font-bold uppercase tracking-wider ${
-                bloqueado ? 'text-pf-gray' : 'text-pf-red'
-              }`}
-            >
-              Asignación de Despacho
-            </h3>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">Partner</label>
-                <select
-                  value={partnerSeleccionado}
-                  disabled={bloqueado}
-                  onChange={(e) => cambiarPartner(e.target.value)}
-                  className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-neutral-100 disabled:text-neutral-600 focus:outline-none focus:border-pf-red"
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                  V{orden.Conteo_Operaciones}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${claseBadgeEstado(
+                    orden.Estado
+                  )}`}
                 >
-                  <option value="">Sin asignar</option>
-                  {partners.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
+                  {bloqueado && <Lock className="w-3 h-3" />}
+                  {orden.Estado}
+                </span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">Cuadrilla</label>
-                <select
-                  value={cuadrillaSeleccionada}
-                  onChange={(e) => cambiarCuadrilla(e.target.value)}
-                  disabled={bloqueado || !partnerSeleccionado}
-                  className="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-neutral-100 disabled:text-neutral-600 focus:outline-none focus:border-pf-red"
-                >
-                  <option value="">Sin cuadrilla</option>
-                  {cuadrillaSeleccionada &&
-                    !cuadrillasFiltradas.some((c) => c.cuadrilla === cuadrillaSeleccionada) && (
-                      <option value={cuadrillaSeleccionada}>{cuadrillaSeleccionada}</option>
-                    )}
-                  {cuadrillasFiltradas.map((c) => (
-                    <option key={`${c.partner}-${c.cuadrilla}`} value={c.cuadrilla}>
-                      {c.cuadrilla} — {c.nombre_tecnico}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center gap-2 text-xs text-slate-500 truncate">
+                <span className="font-semibold text-slate-800 truncate">
+                  {orden.nom_cliente || 'Sin titular'}
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="font-mono text-[11px] text-slate-400 shrink-0">
+                  {orden.IDoperacion}
+                </span>
               </div>
             </div>
-          </section>
 
-          <MesaEstadoSection
-            catalogo={catalogoEstados}
-            estado={estadoMesa}
-            subEstado={subEstadoMesa}
-            motivoMesa={motivoMesa}
-            proximaFecha={proximaFecha}
-            proximoTramo={proximoTramo}
-            bloqueado={bloqueado}
-            onChangeEstado={cambiarEstadoMesa}
-            onChangeSubEstado={setSubEstadoMesa}
-            onChangeMotivo={setMotivoMesa}
-            onChangeProximaFecha={setProximaFecha}
-            onChangeProximoTramo={setProximoTramo}
-          />
-
-          <OperacionFichaLectura orden={orden} />
-        </div>
-
-        <div className="p-4 bg-white border-t border-neutral-200 flex items-center justify-end gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs font-semibold text-neutral-600 hover:bg-neutral-100 cursor-pointer"
-          >
-            Cerrar
-          </button>
-          {!bloqueado && (
             <button
-              type="submit"
-              disabled={guardando}
-              className="inline-flex items-center gap-1.5 bg-pf-red hover:bg-pf-red-hover disabled:bg-neutral-300 text-white text-xs font-bold px-4 py-2 rounded-lg transition cursor-pointer"
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer shrink-0"
             >
-              <Save className="w-4 h-4" />
-              {guardando ? 'Guardando...' : 'Guardar Gestión'}
+              <X className="w-5 h-5" />
             </button>
+          </div>
+
+          {/* Etiqueta: Navegacion interna por pestañas */}
+          <div className="px-6 flex items-center gap-1">
+            {(
+              [
+                { id: 'GESTION', label: 'Gestión', icon: ClipboardCheck },
+                { id: 'TECNICO', label: 'Técnico', icon: Cpu },
+                { id: 'EVIDENCIAS', label: 'Evidencias', icon: Camera, count: evidencias.length },
+                { id: 'HISTORIAL', label: 'Historial', icon: History },
+              ] as {
+                id: TabDrawer;
+                label: string;
+                icon: React.FC<{ className?: string }>;
+                count?: number;
+              }[]
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const activa = tabActiva === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setTabActiva(tab.id)}
+                  className={`relative inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold transition cursor-pointer ${
+                    activa ? 'text-pf-red' : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && (
+                    <span
+                      className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full tabular-nums ${
+                        activa ? 'bg-pf-red/10 text-pf-red' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                  {activa && (
+                    <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-pf-red" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Etiqueta: Cuerpo scrolleable por pestaña activa */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm">
+          {tabActiva === 'GESTION' && (
+            <>
+              <section className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.03)] space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-pf-red" />
+                    Despacho
+                  </h3>
+                  {orden.F_Asignacion && (
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Asig: {orden.F_Asignacion.slice(0, 10)}
+                    </span>
+                  )}
+                </div>
+
+                {bloqueado ? (
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                        Partner
+                      </span>
+                      <span className="font-bold text-slate-900 mt-0.5 block truncate">
+                        {orden.Partner || 'Sin asignar'}
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                        Cuadrilla
+                      </span>
+                      <span className="font-bold text-slate-900 mt-0.5 block truncate">
+                        {orden.Cuadrilla || 'Sin cuadrilla'}
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                        Técnico
+                      </span>
+                      <span className="font-bold text-slate-900 mt-0.5 block truncate">
+                        {orden.nombre_tecnico?.trim() || orden.id_tecnico || '-'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Partner
+                      </label>
+                      <select
+                        value={partnerSeleccionado}
+                        onChange={(e) => cambiarPartner(e.target.value)}
+                        className="pf-input w-full px-3 py-2 text-xs font-semibold text-slate-900"
+                      >
+                        <option value="">Sin asignar</option>
+                        {partners.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Cuadrilla
+                      </label>
+                      <select
+                        value={cuadrillaSeleccionada}
+                        onChange={(e) => cambiarCuadrilla(e.target.value)}
+                        disabled={!partnerSeleccionado}
+                        className="pf-input w-full px-3 py-2 text-xs font-semibold text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                      >
+                        <option value="">Sin cuadrilla</option>
+                        {cuadrillaSeleccionada &&
+                          !cuadrillasFiltradas.some((c) => c.cuadrilla === cuadrillaSeleccionada) && (
+                            <option value={cuadrillaSeleccionada}>{cuadrillaSeleccionada}</option>
+                          )}
+                        {cuadrillasFiltradas.map((c) => (
+                          <option key={`${c.partner}-${c.cuadrilla}`} value={c.cuadrilla}>
+                            {c.cuadrilla} — {c.nombre_tecnico}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <MesaEstadoSection
+                catalogo={catalogoEstados}
+                estado={estadoMesa}
+                subEstado={subEstadoMesa}
+                motivoMesa={motivoMesa}
+                proximaFecha={proximaFecha}
+                proximoTramo={proximoTramo}
+                bloqueado={bloqueado}
+                onChangeEstado={cambiarEstadoMesa}
+                onChangeSubEstado={setSubEstadoMesa}
+                onChangeMotivo={setMotivoMesa}
+                onChangeProximaFecha={setProximaFecha}
+                onChangeProximoTramo={setProximoTramo}
+              />
+
+              <OperacionFichaLectura orden={orden} seccion="AGENDA" />
+            </>
           )}
+
+          {tabActiva === 'TECNICO' && <OperacionFichaLectura orden={orden} seccion="TECNICO" />}
+
+          {tabActiva === 'EVIDENCIAS' && (
+            <OperacionEvidenciasGallery idOperacion={orden.IDoperacion} />
+          )}
+
+          {tabActiva === 'HISTORIAL' && (
+            <OperacionHistorialTimeline idOperacion={orden.IDoperacion} />
+          )}
+        </div>
+
+        {/* Etiqueta: Footer fijo limpio */}
+        <div className="px-6 py-3.5 bg-white border-t border-slate-200/80 flex items-center justify-between gap-2 shrink-0">
+          <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+            {orden.H_Fin ? `Cerrado ${orden.H_Fin.slice(0, 16).replace('T', ' ')}` : orden.Estado}
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="pf-btn-secondary px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer"
+            >
+              Cerrar
+            </button>
+            {!bloqueado && (
+              <button
+                type="submit"
+                disabled={guardando}
+                className="pf-btn-primary inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl disabled:opacity-50 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {guardando ? 'Guardando...' : 'Guardar Gestión'}
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </div>

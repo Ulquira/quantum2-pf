@@ -9,14 +9,39 @@ import {
 
 export const clientesRouter = Router();
 
+const CLIENTES_FROM_ULTIMA_OP = `
+  FROM dev_CLIENTES c
+  LEFT JOIN (
+    SELECT
+      valida_cod_pedido,
+      SUBSTRING_INDEX(
+        GROUP_CONCAT(IDoperacion ORDER BY es_ultimo_cod DESC, Conteo_Operaciones DESC SEPARATOR '||'),
+        '||',
+        1
+      ) AS ultima_id_op,
+      COUNT(*) AS total_ops
+    FROM dev_OPERACION
+    GROUP BY valida_cod_pedido
+  ) uo ON uo.valida_cod_pedido = c.valida_cod_pedido
+  LEFT JOIN dev_OPERACION o ON o.IDoperacion = uo.ultima_id_op
+`;
+
 const CLIENTES_LIST_SELECT = `
-  valida_cod_pedido, IDclientes, id_contrato, dni_cliente, nom_cliente,
-  telefono, telefono_alternativo, correo_electronico, direccion_cliente,
-  coordenadas_direccion, Distrito, Zona, Poligono, tipo, horario,
-  Campaña, Paquete, Mesh_modo, Agencia, fecha_registro, fecha_programacion,
-  ctos_candidatas, detalle_predio,
-  JSON_REMOVE(datos_comerciales_xls, '$.fila_original_completa') AS datos_comerciales_xls,
-  resumen_gestion
+  c.valida_cod_pedido, c.IDclientes, c.id_contrato, c.dni_cliente, c.nom_cliente,
+  c.telefono, c.telefono_alternativo, c.correo_electronico, c.direccion_cliente,
+  c.coordenadas_direccion, c.Distrito, c.Zona, c.Poligono, c.tipo, c.horario,
+  c.Campaña, c.Paquete, c.Mesh_modo, c.Agencia, c.fecha_registro, c.fecha_programacion,
+  c.ctos_candidatas, c.detalle_predio,
+  JSON_REMOVE(c.datos_comerciales_xls, '$.fila_original_completa') AS datos_comerciales_xls,
+  c.resumen_gestion,
+  o.IDoperacion AS ultimo_id_operacion,
+  o.Estado AS ultimo_estado_op,
+  o.SubEstado AS ultimo_subestado_op,
+  o.Partner AS ultimo_partner,
+  o.Cuadrilla AS ultima_cuadrilla,
+  o.Fecha_Gestion AS ultima_fecha_gestion,
+  o.Tramo_Atencio AS ultimo_tramo,
+  COALESCE(uo.total_ops, o.Conteo_Operaciones, 0) AS total_visitas
 `;
 
 clientesRouter.get('/', async (req, res) => {
@@ -39,45 +64,52 @@ clientesRouter.get('/', async (req, res) => {
   if (q) {
     const like = `%${q}%`;
     where.push(`(
-      nom_cliente LIKE ?
-      OR dni_cliente LIKE ?
-      OR valida_cod_pedido LIKE ?
-      OR Mesh_modo LIKE ?
-      OR JSON_UNQUOTE(JSON_EXTRACT(datos_comerciales_xls, '$.comentario')) LIKE ?
-      OR JSON_UNQUOTE(JSON_EXTRACT(datos_comerciales_xls, '$.comentario_validador')) LIKE ?
+      c.nom_cliente LIKE ?
+      OR c.dni_cliente LIKE ?
+      OR c.valida_cod_pedido LIKE ?
+      OR c.Mesh_modo LIKE ?
+      OR o.Cuadrilla LIKE ?
+      OR o.Estado LIKE ?
+      OR JSON_UNQUOTE(JSON_EXTRACT(c.datos_comerciales_xls, '$.comentario')) LIKE ?
+      OR JSON_UNQUOTE(JSON_EXTRACT(c.datos_comerciales_xls, '$.comentario_validador')) LIKE ?
     )`);
-    params.push(like, like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like, like);
   }
 
   if (distrito && distrito !== 'TODOS') {
-    where.push('Distrito = ?');
+    where.push('c.Distrito = ?');
     params.push(distrito);
   }
 
   if (validacion && validacion !== 'TODOS') {
     where.push(
-      "UPPER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(datos_comerciales_xls, '$.estado_validacion')), ''))) = ?"
+      "UPPER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(c.datos_comerciales_xls, '$.estado_validacion')), ''))) = ?"
     );
     params.push(validacion);
   }
 
-  if (estado === 'PROGRAMADO') {
-    where.push(
-      "COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(resumen_gestion, '$.conteo_operaciones')) AS UNSIGNED), 0) > 0"
-    );
-  } else if (estado === 'SIN_PROGRAMAR') {
-    where.push(
-      "COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(resumen_gestion, '$.conteo_operaciones')) AS UNSIGNED), 0) = 0"
-    );
+  if (estado && estado !== 'TODOS') {
+    if (estado === 'SIN_PROGRAMAR') {
+      where.push('o.IDoperacion IS NULL');
+    } else if (estado === 'PROGRAMADO_CUALQUIERA') {
+      where.push('o.IDoperacion IS NOT NULL');
+    } else if (estado === 'EN_GESTION') {
+      where.push(
+        "UPPER(COALESCE(o.Estado, '')) IN ('PENDIENTE', 'PROGRAMADO', 'EN CAMINO', 'EN PROCESO', 'REGESTION')"
+      );
+    } else {
+      where.push("UPPER(TRIM(COALESCE(o.Estado, ''))) = ?");
+      params.push(estado);
+    }
   }
 
   if (fechaDesde) {
-    where.push('DATE(COALESCE(fecha_programacion, fecha_registro)) >= ?');
+    where.push('DATE(COALESCE(o.Fecha_Gestion, c.fecha_programacion, c.fecha_registro)) >= ?');
     params.push(fechaDesde);
   }
 
   if (fechaHasta) {
-    where.push('DATE(COALESCE(fecha_programacion, fecha_registro)) <= ?');
+    where.push('DATE(COALESCE(o.Fecha_Gestion, c.fecha_programacion, c.fecha_registro)) <= ?');
     params.push(fechaHasta);
   }
 
@@ -86,9 +118,9 @@ clientesRouter.get('/', async (req, res) => {
   try {
     const [rows] = await dbPool.query(
       `SELECT ${CLIENTES_LIST_SELECT}
-       FROM dev_CLIENTES
+       ${CLIENTES_FROM_ULTIMA_OP}
        ${whereSql}
-       ORDER BY fecha_registro DESC
+       ORDER BY c.fecha_registro DESC
        LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
@@ -97,8 +129,8 @@ clientesRouter.get('/', async (req, res) => {
       return res.json(rows);
     }
 
-    const [[countRows], [distRows], [valRows]] = await Promise.all([
-      dbPool.query(`SELECT COUNT(*) AS total FROM dev_CLIENTES ${whereSql}`, params),
+    const [[countRows], [distRows], [valRows], [estOpRows]] = await Promise.all([
+      dbPool.query(`SELECT COUNT(*) AS total ${CLIENTES_FROM_ULTIMA_OP} ${whereSql}`, params),
       dbPool.query(
         "SELECT DISTINCT Distrito FROM dev_CLIENTES WHERE Distrito IS NOT NULL AND TRIM(Distrito) <> '' ORDER BY Distrito ASC"
       ),
@@ -108,6 +140,12 @@ clientesRouter.get('/', async (req, res) => {
          WHERE JSON_EXTRACT(datos_comerciales_xls, '$.estado_validacion') IS NOT NULL
          HAVING estado_val IS NOT NULL AND estado_val <> '' AND estado_val <> 'NULL'
          ORDER BY estado_val ASC`
+      ),
+      dbPool.query(
+        `SELECT DISTINCT UPPER(TRIM(Estado)) AS estado_op
+         FROM dev_OPERACION
+         WHERE es_ultimo_cod = 1 AND Estado IS NOT NULL AND TRIM(Estado) <> ''
+         ORDER BY estado_op ASC`
       ),
     ]);
 
@@ -123,7 +161,63 @@ clientesRouter.get('/', async (req, res) => {
       filtros: {
         distritos: (distRows as { Distrito: string }[]).map((r) => r.Distrito),
         estadosValidacion: (valRows as { estado_val: string }[]).map((r) => r.estado_val),
+        estadosOperacion: (estOpRows as { estado_op: string }[]).map((r) => r.estado_op),
       },
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Etiqueta: Historial de programaciones previas y logs de movimientos por codigo de pedido
+clientesRouter.get('/:codPedido/historial', async (req, res) => {
+  const codPedido = String(req.params.codPedido || '').trim();
+  if (!codPedido) return res.status(400).json({ error: 'Código de pedido requerido' });
+
+  try {
+    const [[visitasRows], [logsRows]] = await Promise.all([
+      dbPool.query(
+        `SELECT
+          o.IDoperacion,
+          o.Conteo_Operaciones,
+          o.es_ultimo_cod,
+          o.Estado,
+          o.SubEstado,
+          o.Partner,
+          o.Cuadrilla,
+          o.Fecha_Gestion,
+          o.Tramo_Atencio,
+          o.Motivo,
+          o.Observaciones,
+          o.H_Progra,
+          o.H_Fin,
+          CONCAT_WS(' ', u.nombres, u.apellidos) AS nombre_tecnico
+         FROM dev_OPERACION o
+         LEFT JOIN dev_USER u ON o.id_tecnico = u.id_user
+         WHERE o.valida_cod_pedido = ?
+         ORDER BY o.Conteo_Operaciones DESC, o.IDoperacion DESC`,
+        [codPedido]
+      ),
+      dbPool
+        .query(
+          `SELECT l.*, o.Conteo_Operaciones
+           FROM dev_OPERACION_LOGS l
+           LEFT JOIN dev_OPERACION o ON l.IDoperacion = o.IDoperacion
+           WHERE l.valida_cod_pedido = ?
+             AND l.accion NOT IN ('EVIDENCIA_SUBIDA', 'EVIDENCIA_ELIMINADA')
+           ORDER BY l.fecha_evento DESC, l.id_log DESC`,
+          [codPedido]
+        )
+        .catch(() => [[]]),
+    ]);
+
+    const visitas = Array.isArray(visitasRows) ? visitasRows : [];
+    const logs = Array.isArray(logsRows) ? logsRows : [];
+
+    res.json({
+      total_programaciones: visitas.length,
+      visitas,
+      logs,
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

@@ -2,6 +2,11 @@ import { Router } from 'express';
 import type { ResultSetHeader } from 'mysql2';
 import { dbPool } from '../../config/db';
 import { esEstadoFinalOperacion } from '../../shared/operacionRules';
+import {
+  extraerActorRequest,
+  registrarLogOperacion,
+  type AccionLogOperacion,
+} from '../../services/operacionLogService';
 
 export const operacionesRouter = Router();
 
@@ -29,6 +34,31 @@ operacionesRouter.post('/programar', async (req, res) => {
   const conn = await dbPool.getConnection();
   try {
     await conn.beginTransaction();
+
+    const [activasRows] = await conn.query(
+      `SELECT IDoperacion, Estado
+       FROM dev_OPERACION
+       WHERE valida_cod_pedido = ? AND es_ultimo_cod = 1
+       ORDER BY Conteo_Operaciones DESC
+       LIMIT 1`,
+      [valida_cod_pedido]
+    );
+    const ordenActiva = (activasRows as { IDoperacion: string; Estado: string | null }[])[0];
+    const estadoActivo = (ordenActiva?.Estado || '').trim().toUpperCase();
+
+    if (estadoActivo === 'EN CAMINO' || estadoActivo === 'EN PROCESO') {
+      await conn.rollback();
+      return res.status(409).json({
+        error: `No se puede reprogramar mientras la visita actual está ${estadoActivo} en campo.`,
+      });
+    }
+
+    if (estadoActivo === 'FINALIZADO') {
+      await conn.rollback();
+      return res.status(409).json({
+        error: 'Este pedido ya cuenta con instalación finalizada.',
+      });
+    }
 
     if (telefono_adicional !== undefined && String(telefono_adicional).trim() !== '') {
       await conn.query(
@@ -97,6 +127,27 @@ operacionesRouter.post('/programar', async (req, res) => {
       [fecha_gestion, tramo_atencion, nroVisita, fecha_gestion, valida_cod_pedido]
     );
 
+    const actor = await extraerActorRequest(req);
+    await registrarLogOperacion(
+      {
+        IDoperacion: idOperacion,
+        valida_cod_pedido,
+        origen: 'WEB',
+        accion: 'PROGRAMACION',
+        estado_anterior: null,
+        estado_nuevo: 'PENDIENTE',
+        subestado_nuevo: 'SIN ASIGNACIÓN DE PARTNER',
+        actor,
+        detalle: `Visita V${nroVisita} agendada para ${fecha_gestion} (${tramo_atencion})`,
+        cambios: {
+          fecha_gestion,
+          tramo_atencion,
+          ...(comentario_programacion ? { comentario: String(comentario_programacion).trim() } : {}),
+        },
+      },
+      conn
+    );
+
     await conn.commit();
     res.json({ ok: true, IDoperacion: idOperacion, visita: nroVisita, affectedRows: result.affectedRows });
   } catch (error) {
@@ -122,16 +173,16 @@ operacionesRouter.get('/', async (req, res) => {
   const fechaDesde = String(req.query.fecha_desde || '').trim().slice(0, 10);
   const fechaHasta = String(req.query.fecha_hasta || '').trim().slice(0, 10);
 
-  const where: string[] = [];
-  const params: unknown[] = [];
+  const whereBase: string[] = [];
+  const paramsBase: unknown[] = [];
 
   if (soloUltima) {
-    where.push('o.es_ultimo_cod = 1');
+    whereBase.push('o.es_ultimo_cod = 1');
   }
 
   if (q) {
     const like = `%${q}%`;
-    where.push(`(
+    whereBase.push(`(
       o.IDoperacion LIKE ?
       OR o.valida_cod_pedido LIKE ?
       OR c.nom_cliente LIKE ?
@@ -139,34 +190,38 @@ operacionesRouter.get('/', async (req, res) => {
       OR o.Cuadrilla LIKE ?
       OR CONCAT_WS(' ', u.nombres, u.apellidos) LIKE ?
     )`);
-    params.push(like, like, like, like, like, like);
+    paramsBase.push(like, like, like, like, like, like);
   }
+
+  if (distrito && distrito !== 'TODOS') {
+    whereBase.push('c.Distrito = ?');
+    paramsBase.push(distrito);
+  }
+
+  if (cuadrilla && cuadrilla !== 'TODOS') {
+    whereBase.push('o.Cuadrilla = ?');
+    paramsBase.push(cuadrilla);
+  }
+
+  if (fechaDesde) {
+    whereBase.push('DATE(o.Fecha_Gestion) >= ?');
+    paramsBase.push(fechaDesde);
+  }
+
+  if (fechaHasta) {
+    whereBase.push('DATE(o.Fecha_Gestion) <= ?');
+    paramsBase.push(fechaHasta);
+  }
+
+  const where = [...whereBase];
+  const params = [...paramsBase];
 
   if (estado && estado !== 'TODOS') {
     where.push('o.Estado = ?');
     params.push(estado);
   }
 
-  if (distrito && distrito !== 'TODOS') {
-    where.push('c.Distrito = ?');
-    params.push(distrito);
-  }
-
-  if (cuadrilla && cuadrilla !== 'TODOS') {
-    where.push('o.Cuadrilla = ?');
-    params.push(cuadrilla);
-  }
-
-  if (fechaDesde) {
-    where.push('DATE(o.Fecha_Gestion) >= ?');
-    params.push(fechaDesde);
-  }
-
-  if (fechaHasta) {
-    where.push('DATE(o.Fecha_Gestion) <= ?');
-    params.push(fechaHasta);
-  }
-
+  const whereBaseSql = whereBase.length > 0 ? `WHERE ${whereBase.join(' AND ')}` : '';
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const fromJoinSql = `
     FROM dev_OPERACION o
@@ -204,8 +259,19 @@ operacionesRouter.get('/', async (req, res) => {
       return res.json(rows);
     }
 
-    const [[countRows], [distRows], [cuadRows]] = await Promise.all([
+    const [[countRows], [resumenRows], [distRows], [cuadRows]] = await Promise.all([
       dbPool.query(`SELECT COUNT(*) AS total ${fromJoinSql} ${whereSql}`, params),
+      dbPool.query(
+        `SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN UPPER(COALESCE(o.Estado, '')) IN ('PENDIENTE', 'PROGRAMADA') THEN 1 ELSE 0 END) AS pendientes,
+          SUM(CASE WHEN UPPER(COALESCE(o.Estado, '')) IN ('PROGRAMADO', 'EN CAMINO', 'EN PROCESO', 'REGESTION') THEN 1 ELSE 0 END) AS en_gestion,
+          SUM(CASE WHEN UPPER(COALESCE(o.Estado, '')) = 'FINALIZADO' THEN 1 ELSE 0 END) AS finalizadas,
+          SUM(CASE WHEN UPPER(COALESCE(o.Estado, '')) IN ('REPROGRAMA', 'CANCELADO', 'SIN FACILIDADES TÉCNICAS', 'INASISTENCIA', 'AUSENTE', 'RESCATE') THEN 1 ELSE 0 END) AS incidencias
+         ${fromJoinSql}
+         ${whereBaseSql}`,
+        paramsBase
+      ),
       dbPool.query(
         `SELECT DISTINCT c.Distrito
          FROM dev_OPERACION o
@@ -222,6 +288,8 @@ operacionesRouter.get('/', async (req, res) => {
     ]);
 
     const total = Number((countRows as { total: number }[])[0]?.total || 0);
+    const kpi = (resumenRows as Record<string, number | null>[])[0] || {};
+
     res.json({
       data: rows,
       pagination: {
@@ -230,11 +298,55 @@ operacionesRouter.get('/', async (req, res) => {
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
+      resumen: {
+        total: Number(kpi.total || 0),
+        pendientes: Number(kpi.pendientes || 0),
+        en_gestion: Number(kpi.en_gestion || 0),
+        finalizadas: Number(kpi.finalizadas || 0),
+        incidencias: Number(kpi.incidencias || 0),
+      },
       filtros: {
         distritos: (distRows as { Distrito: string }[]).map((r) => r.Distrito),
         cuadrillas: (cuadRows as { Cuadrilla: string }[]).map((r) => r.Cuadrilla),
       },
     });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Etiqueta: Historial cronologico de movimientos por orden o por codigo de pedido completo
+operacionesRouter.get('/:id/logs', async (req, res) => {
+  const idOperacion = req.params.id;
+  const alcance = String(req.query.alcance || 'pedido').toLowerCase();
+
+  try {
+    let codPedido: string | null = null;
+    if (alcance === 'pedido') {
+      const [opRows] = await dbPool.query(
+        'SELECT valida_cod_pedido FROM dev_OPERACION WHERE IDoperacion = ? LIMIT 1',
+        [idOperacion]
+      );
+      codPedido = (opRows as { valida_cod_pedido?: string | null }[])[0]?.valida_cod_pedido ?? null;
+    }
+
+    const sql = codPedido
+      ? `SELECT l.*, o.Conteo_Operaciones
+         FROM dev_OPERACION_LOGS l
+         LEFT JOIN dev_OPERACION o ON l.IDoperacion = o.IDoperacion
+         WHERE (l.valida_cod_pedido = ? OR l.IDoperacion = ?)
+           AND l.accion NOT IN ('EVIDENCIA_SUBIDA', 'EVIDENCIA_ELIMINADA')
+         ORDER BY l.fecha_evento DESC, l.id_log DESC`
+      : `SELECT l.*, o.Conteo_Operaciones
+         FROM dev_OPERACION_LOGS l
+         LEFT JOIN dev_OPERACION o ON l.IDoperacion = o.IDoperacion
+         WHERE l.IDoperacion = ?
+           AND l.accion NOT IN ('EVIDENCIA_SUBIDA', 'EVIDENCIA_ELIMINADA')
+         ORDER BY l.fecha_evento DESC, l.id_log DESC`;
+
+    const params = codPedido ? [codPedido, idOperacion] : [idOperacion];
+    const [rows] = await dbPool.query(sql, params);
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -427,6 +539,70 @@ operacionesRouter.patch('/:id', async (req, res) => {
          WHERE o.IDoperacion = ? AND o.es_ultimo_cod = 1`,
         [estadoFinal, motivoLimpio || subEstadoFinal || null, idOperacion]
       );
+    }
+
+    const actor = await extraerActorRequest(req);
+    const cambioDespacho =
+      partnerFinal !== actual.Partner || cuadrillaFinal !== actual.Cuadrilla;
+
+    let accionLog: AccionLogOperacion = 'CAMBIO_ESTADO';
+    if (esReprogramaConFecha) accionLog = 'REPROGRAMACION';
+    else if (cierraVisitaAhora) accionLog = 'CIERRE_ORDEN';
+    else if (cambioDespacho) accionLog = 'ASIGNACION';
+
+    const cambiosMesa: Record<string, unknown> = {};
+    if (partnerFinal !== actual.Partner) {
+      cambiosMesa.Partner = `${actual.Partner || 'Sin asignar'} → ${partnerFinal || 'Sin asignar'}`;
+    }
+    if (cuadrillaFinal !== actual.Cuadrilla) {
+      cambiosMesa.Cuadrilla = `${actual.Cuadrilla || 'Sin cuadrilla'} → ${cuadrillaFinal || 'Sin cuadrilla'}`;
+    }
+    if (esReprogramaConFecha) {
+      cambiosMesa.Nueva_Agenda = `${proximaFechaLimpia} (${proximoTramoLimpio})`;
+    }
+
+    await registrarLogOperacion(
+      {
+        IDoperacion: idOperacion,
+        valida_cod_pedido: codPedido,
+        origen: 'WEB',
+        accion: accionLog,
+        estado_anterior: actual.Estado,
+        estado_nuevo: estadoFinal,
+        subestado_nuevo: subEstadoFinal,
+        actor,
+        detalle:
+          motivoLimpio ||
+          (cambioDespacho
+            ? `Asignado a ${partnerFinal || '-'} / ${cuadrillaFinal || '-'}`
+            : subEstadoFinal),
+        cambios: Object.keys(cambiosMesa).length > 0 ? cambiosMesa : null,
+      },
+      conn
+    );
+
+    if (esReprogramaConFecha && codPedido) {
+      const [ultimaOpRows] = await conn.query(
+        'SELECT IDoperacion, Conteo_Operaciones FROM dev_OPERACION WHERE valida_cod_pedido = ? AND es_ultimo_cod = 1 LIMIT 1',
+        [codPedido]
+      );
+      const nuevaOp = (ultimaOpRows as { IDoperacion: string; Conteo_Operaciones: number }[])[0];
+      if (nuevaOp) {
+        await registrarLogOperacion(
+          {
+            IDoperacion: nuevaOp.IDoperacion,
+            valida_cod_pedido: codPedido,
+            origen: 'SISTEMA',
+            accion: 'PROGRAMACION',
+            estado_anterior: estadoFinal,
+            estado_nuevo: 'PENDIENTE',
+            subestado_nuevo: 'SIN ASIGNACIÓN DE PARTNER',
+            actor,
+            detalle: `Visita V${nuevaOp.Conteo_Operaciones} generada por reprogramación para ${proximaFechaLimpia} (${proximoTramoLimpio})`,
+          },
+          conn
+        );
+      }
     }
 
     await conn.commit();

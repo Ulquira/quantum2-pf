@@ -132,7 +132,7 @@ export const finalizarJornadaApi = async (payload: {
   id_user: string;
   lat?: number | null;
   lng?: number | null;
-  motivo_cierre: 'MANUAL' | 'LOGOUT';
+  motivo_cierre: 'MANUAL' | 'LOGOUT' | 'HORARIO_20H' | 'GESTOR';
 }): Promise<void> => {
   await apiClient.post('/rastreo/jornada/finalizar', payload);
 };

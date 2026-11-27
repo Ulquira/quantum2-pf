@@ -98,9 +98,13 @@ export const exportarClientesCsv = (clientes: ClienteUnico[]) => {
       fecha_registro: c.fecha_registro ? c.fecha_registro.slice(0, 19).replace('T', ' ') : '',
       fecha_programacion: c.fecha_programacion ? c.fecha_programacion.slice(0, 10) : '',
       horario: c.horario ?? '',
-      estado_operaciones: gestion.estado_operaciones ?? 'IMPORTADO',
-      conteo_operaciones: gestion.conteo_operaciones ?? 0,
-      ultima_fecha_gestion: gestion.ultima_fecha_gestion ?? '',
+      estado_operaciones: c.ultimo_estado_op || gestion.estado_operaciones || 'SIN PROGRAMAR',
+      subestado_operaciones: c.ultimo_subestado_op ?? '',
+      cuadrilla_actual: c.ultima_cuadrilla ?? '',
+      conteo_operaciones: c.total_visitas ?? gestion.conteo_operaciones ?? 0,
+      ultima_fecha_gestion:
+        (c.ultima_fecha_gestion ? c.ultima_fecha_gestion.slice(0, 10) : '') ||
+        (gestion.ultima_fecha_gestion ?? ''),
     };
   });
 

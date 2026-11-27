@@ -18,7 +18,6 @@ import type { CatalogoEstado } from '../../configuracion/types/configuracion.typ
 import { esOrdenCerrada } from '../../operaciones/utils/operacionJson';
 import { OrdenEjecucionApk } from './OrdenEjecucionApk';
 import { TecnicoMenuDrawer, type SeccionMenuApk } from './TecnicoMenuDrawer';
-import { BarraJornadaApk } from './BarraJornadaApk';
 import { useMonitoreoJornada } from '../hooks/useMonitoreoJornada';
 import { apiClient } from '../../../lib/apiClient';
 import { flushOfflineQueue, getPendingItems } from '../services/offlineQueue';
@@ -266,13 +265,7 @@ export const TecnicoApkView: React.FC<Props> = ({ usuario, onLogout }) => {
         ) : (
           <div className="space-y-3">
             {/* Etiqueta: Control de Jornada (Conexion/Desconexion + GPS continuo) */}
-            <BarraJornadaApk
-              enJornada={enJornada}
-              jornada={jornada}
-              cambiando={cambiandoJornada}
-              estadoGps={estadoGps}
-              onToggle={() => (enJornada ? finalizarJornada('MANUAL') : iniciarJornada())}
-            />
+            
 
             {/* Pestañas Asignadas / Cerradas */}
             <div className="grid grid-cols-2 bg-neutral-200/75 p-1 rounded-xl text-xs font-bold">

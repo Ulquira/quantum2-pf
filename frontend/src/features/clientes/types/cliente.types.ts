@@ -74,6 +74,14 @@ export interface ClienteUnico {
   detalle_predio?: DetallePredioJson | null;
   datos_comerciales_xls?: DatosComercialesXlsJson | null;
   resumen_gestion: ResumenGestionJson | null;
+  ultimo_id_operacion?: string | null;
+  ultimo_estado_op?: string | null;
+  ultimo_subestado_op?: string | null;
+  ultimo_partner?: string | null;
+  ultima_cuadrilla?: string | null;
+  ultima_fecha_gestion?: string | null;
+  ultimo_tramo?: string | null;
+  total_visitas?: number;
 }
 
 export interface TecnicoDisponible {

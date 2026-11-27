@@ -8,8 +8,24 @@ import {
   uploadEvidenceImage,
 } from '../../services/storageService';
 import { esEstadoFinalOperacion } from '../../shared/operacionRules';
+import {
+  extraerActorRequest,
+  registrarLogOperacion,
+} from '../../services/operacionLogService';
 
 export const apkRouter = Router();
+
+const parsearJsonColumna = (val: unknown): Record<string, unknown> => {
+  if (!val) return {};
+  if (typeof val === 'string') {
+    try {
+      return JSON.parse(val) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return val as Record<string, unknown>;
+};
 
 apkRouter.get('/ordenes', async (req, res) => {
   const idTecnico = String(req.query.id_tecnico || '').trim();
@@ -107,6 +123,7 @@ apkRouter.post('/ordenes/:id/evidencia', async (req, res) => {
        VALUES (?, ?, ?, ?, ?, NOW())`,
       [idOperacion, seccion, tipo_foto, uploaded.storageRef, id_tecnico || null]
     );
+
     res.json({
       ok: true,
       id_evidencia: result.insertId,
@@ -121,10 +138,18 @@ apkRouter.post('/ordenes/:id/evidencia', async (req, res) => {
 apkRouter.delete('/evidencias/:idEvidencia', async (req, res) => {
   try {
     const [rows] = await dbPool.query(
-      'SELECT url_archivo FROM dev_EVIDENCIAS WHERE id_evidencia = ? LIMIT 1',
+      'SELECT IDoperacion, seccion, tipo_foto, id_tecnico, url_archivo FROM dev_EVIDENCIAS WHERE id_evidencia = ? LIMIT 1',
       [req.params.idEvidencia]
     );
-    const row = (rows as { url_archivo: string }[])[0];
+    const row = (
+      rows as {
+        IDoperacion: string;
+        seccion: string;
+        tipo_foto: string;
+        id_tecnico: string | null;
+        url_archivo: string;
+      }[]
+    )[0];
 
     await dbPool.query('DELETE FROM dev_EVIDENCIAS WHERE id_evidencia = ?', [
       req.params.idEvidencia,
@@ -163,7 +188,9 @@ apkRouter.patch('/ordenes/:id/gestionar', async (req, res) => {
     await conn.beginTransaction();
 
     const [actualRows] = await conn.query(
-      'SELECT valida_cod_pedido, Estado, H_Fin, tokens FROM dev_OPERACION WHERE IDoperacion = ? LIMIT 1',
+      `SELECT valida_cod_pedido, Estado, SubEstado, H_Inicio, H_Fin,
+              id_tecnico, datos_cto, datos_equipos, tokens
+       FROM dev_OPERACION WHERE IDoperacion = ? LIMIT 1`,
       [idOperacion]
     );
     const actual = (actualRows as Record<string, unknown>[])[0];
@@ -176,11 +203,28 @@ apkRouter.patch('/ordenes/:id/gestionar', async (req, res) => {
       return res.status(403).json({ error: 'Esta orden ya se encuentra cerrada.' });
     }
 
+    const actor = await extraerActorRequest(req, actual.id_tecnico ? String(actual.id_tecnico) : null);
+
     if (accion === 'INICIAR') {
       await conn.query(
         'UPDATE dev_OPERACION SET H_Inicio = COALESCE(H_Inicio, NOW()), H_ultimo_movimiento = NOW() WHERE IDoperacion = ?',
         [idOperacion]
       );
+      if (!actual.H_Inicio) {
+        await registrarLogOperacion(
+          {
+            IDoperacion: idOperacion,
+            valida_cod_pedido: actual.valida_cod_pedido ? String(actual.valida_cod_pedido) : null,
+            origen: 'APK',
+            accion: 'INICIO_ATENCION',
+            estado_anterior: actual.Estado ? String(actual.Estado) : null,
+            estado_nuevo: actual.Estado ? String(actual.Estado) : null,
+            actor,
+            detalle: 'Inicio de gestión técnica en campo',
+          },
+          conn
+        );
+      }
       await conn.commit();
       return res.json({ ok: true });
     }
@@ -251,6 +295,59 @@ apkRouter.patch('/ordenes/:id/gestionar', async (req, res) => {
          )
          WHERE valida_cod_pedido = ?`,
         [estadoDestino, Motivo || subEstadoDestino || null, actual.valida_cod_pedido]
+      );
+    }
+
+    const ctoPrev = parsearJsonColumna(actual.datos_cto);
+    const eqPrev = parsearJsonColumna(actual.datos_equipos);
+    const cambiosCampo: Record<string, string> = {};
+
+    const registrarDiff = (etiqueta: string, nuevoVal: unknown, prevVal: unknown) => {
+      if (nuevoVal === undefined || nuevoVal === null) return;
+      const limpioNuevo = String(nuevoVal).trim();
+      const limpioPrev = String(prevVal ?? '').trim();
+      if (limpioNuevo !== limpioPrev && limpioNuevo !== '') {
+        cambiosCampo[etiqueta] = limpioPrev ? `${limpioPrev} → ${limpioNuevo}` : limpioNuevo;
+      }
+    };
+
+    registrarDiff('CTO', cto_uso, ctoPrev.cto_uso);
+    registrarDiff('Puerto', puerto_utilizado, ctoPrev.puerto_utilizado);
+    registrarDiff('RX_CTO', rx_cto, ctoPrev.rx_cto);
+    registrarDiff('RX_Roseta', rx_roseta, ctoPrev.rx_roseta);
+    registrarDiff('Atencion', at_titular, eqPrev.at_titular);
+    registrarDiff('SN_ONT', sn_ont, eqPrev.sn_ont);
+    registrarDiff('SN_Mesh', sn_mesh, eqPrev.sn_mesh);
+    registrarDiff('Metraje', metraje_cable, eqPrev.metraje_cable);
+
+    const estadoPrevio = String(actual.Estado || '').trim().toUpperCase();
+    const huboCambioEstado = Boolean(estadoDestino && estadoDestino !== estadoPrevio);
+    const huboCambiosTecnicos = Object.keys(cambiosCampo).length > 0;
+
+    if (huboCambioEstado || cierraOrden || huboCambiosTecnicos) {
+      await registrarLogOperacion(
+        {
+          IDoperacion: idOperacion,
+          valida_cod_pedido: actual.valida_cod_pedido ? String(actual.valida_cod_pedido) : null,
+          origen: 'APK',
+          accion: cierraOrden
+            ? 'CIERRE_ORDEN'
+            : huboCambioEstado
+            ? 'CAMBIO_ESTADO'
+            : 'DATOS_TECNICOS',
+          estado_anterior: estadoPrevio || null,
+          estado_nuevo: estadoDestino || estadoPrevio || null,
+          subestado_nuevo:
+            subEstadoDestino || (actual.SubEstado ? String(actual.SubEstado) : null),
+          actor,
+          detalle:
+            Motivo ||
+            (huboCambioEstado
+              ? subEstadoDestino || `Paso a ${estadoDestino}`
+              : 'Actualización de parámetros técnicos'),
+          cambios: huboCambiosTecnicos ? cambiosCampo : null,
+        },
+        conn
       );
     }
 
